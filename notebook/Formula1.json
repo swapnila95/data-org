@@ -1,0 +1,192 @@
+{
+	"name": "Formula1",
+	"properties": {
+		"nbformat": 4,
+		"nbformat_minor": 2,
+		"bigDataPool": {
+			"referenceName": "spformula1",
+			"type": "BigDataPoolReference"
+		},
+		"sessionProperties": {
+			"driverMemory": "28g",
+			"driverCores": 4,
+			"executorMemory": "28g",
+			"executorCores": 4,
+			"numExecutors": 2,
+			"conf": {
+				"spark.dynamicAllocation.enabled": "false",
+				"spark.dynamicAllocation.minExecutors": "2",
+				"spark.dynamicAllocation.maxExecutors": "2",
+				"spark.autotune.trackingId": "edd3e62a-fff7-43b5-99b2-3545d3a2b648"
+			}
+		},
+		"metadata": {
+			"saveOutput": true,
+			"enableDebugMode": false,
+			"kernelspec": {
+				"name": "synapse_pyspark",
+				"display_name": "Synapse PySpark"
+			},
+			"language_info": {
+				"name": "python"
+			},
+			"a365ComputeOptions": {
+				"id": "/subscriptions/05a43f56-f126-4bf1-bb97-9ca4d91dfcb5/resourceGroups/rg-data/providers/Microsoft.Synapse/workspaces/wsformula1/bigDataPools/spformula1",
+				"name": "spformula1",
+				"type": "Spark",
+				"endpoint": "https://wsformula1.dev.azuresynapse.net/livyApi/versions/2019-11-01-preview/sparkPools/spformula1",
+				"auth": {
+					"type": "AAD",
+					"authResource": "https://dev.azuresynapse.net"
+				},
+				"sparkVersion": "3.4",
+				"nodeCount": 10,
+				"cores": 4,
+				"memory": 28,
+				"automaticScaleJobs": false
+			},
+			"sessionKeepAliveTimeout": 30
+		},
+		"cells": [
+			{
+				"cell_type": "code",
+				"source": [
+					"from pyspark.sql.functions import when"
+				],
+				"execution_count": null
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"collapsed": false
+				},
+				"source": [
+					"display(\n",
+					"    spark.read.format(\"csv\").load(\"abfss://formula1@strdatadev.dfs.core.windows.net/formula1-rz/\")\n",
+					")"
+				],
+				"execution_count": 51
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"#read all the csv file and create temp view for the same\n",
+					"\n",
+					"df_races = spark.read \\\n",
+					"    .option(\"header\", \"true\") \\\n",
+					"    .option(\"inferSchema\", \"true\") \\\n",
+					"    .csv(\"abfss://formula1@strdatadev.dfs.core.windows.net/formula1-rz/races.csv\")\n",
+					"df.createOrReplaceTempView(\"races\")\n",
+					"df_races.show()\n",
+					"\n",
+					"df_drivers = spark.read \\\n",
+					"    .option(\"header\", \"true\") \\\n",
+					"    .option(\"inferSchema\", \"true\") \\\n",
+					"    .csv(\"abfss://formula1@strdatadev.dfs.core.windows.net/formula1-rz/drivers.csv\")\n",
+					"df.createOrReplaceTempView(\"drivers\")\n",
+					"df_drivers.show()\n",
+					"\n",
+					"\n",
+					"df_results = spark.read \\\n",
+					"    .option(\"header\", \"true\") \\\n",
+					"    .option(\"inferSchema\", \"true\") \\\n",
+					"    .csv(\"abfss://formula1@strdatadev.dfs.core.windows.net/formula1-rz/results.csv\")\n",
+					"df.createOrReplaceTempView(\"results\")\n",
+					"df_results.show()"
+				],
+				"execution_count": 67
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"#remove nulls\n",
+					"df_clean_races = df_races.dropna()\n",
+					"df_clean_races.show()\n",
+					"\n",
+					"\n",
+					"df_clean_results = df_results.dropna()\n",
+					"df_clean_results.show()\n",
+					"\n",
+					"df_clean_drivers = df_drivers.dropna()\n",
+					"df_clean_drivers.show()"
+				],
+				"execution_count": 102
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"df_winners = spark.sql(\"\"\"\n",
+					"    SELECT race_Id, driver_id, points, position\n",
+					"    from results\n",
+					"    WHERE position = 1\n",
+					"\"\"\")\n",
+					"\n",
+					"df_winners.show()"
+				],
+				"execution_count": 108
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"total_points_df = spark.sql(\"\"\"\n",
+					"    SELECT driver_Id, SUM(points) AS total_points\n",
+					"    FROM results\n",
+					"    GROUP BY driver_Id\n",
+					"    ORDER BY total_points DESC\n",
+					"\"\"\")\n",
+					"\n",
+					"total_points_df.show()"
+				],
+				"execution_count": 103
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"#arrage results according to positions\n",
+					"df_ordered_results = df_clean_results.orderBy(\"position\")\n",
+					"\n",
+					"df_ordered_results.show()"
+				],
+				"execution_count": 113
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"collapsed": false
+				},
+				"source": [
+					"df_clean_results.write\\\n",
+					"    .mode(\"overwrite\")\\\n",
+					"    .parquet(\"abfss://formula1@strdatadev.dfs.core.windows.net/formula1-cz/results.parquet\")\n",
+					"\n",
+					"df_clean_races.write\\\n",
+					"    .mode(\"overwrite\")\\\n",
+					"    .parquet(\"abfss://formula1@strdatadev.dfs.core.windows.net/formula1-cz/races.parquet\")\n",
+					"\n",
+					"df_clean_drivers.write\\\n",
+					"    .mode(\"overwrite\")\\\n",
+					"    .parquet(\"abfss://formula1@strdatadev.dfs.core.windows.net/formula1-cz/drivers.parquet\")\n",
+					"\n",
+					"df_parquet_results = spark.read.format(\"parquet\").parquet(\"abfss://formula1@strdatadev.dfs.core.windows.net/formula1-cz/results.parquet\")\n",
+					"display(df_parquet_results)\n",
+					"\n",
+					"\n",
+					"df_parquet_races = spark.read.format(\"parquet\").parquet(\"abfss://formula1@strdatadev.dfs.core.windows.net/formula1-cz/races.parquet\")\n",
+					"display(df_parquet_races)\n",
+					"\n",
+					"\n",
+					"df_parquet_drivers = spark.read.format(\"parquet\").parquet(\"abfss://formula1@strdatadev.dfs.core.windows.net/formula1-cz/drivers.parquet\")\n",
+					"display(df_parquet_drivers)"
+				],
+				"execution_count": 123
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					""
+				],
+				"execution_count": null
+			}
+		]
+	}
+}
